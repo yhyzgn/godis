@@ -97,6 +97,10 @@ func NewClient(ops ...Options) *Client {
 			}
 		}
 
+		if err := cn.Ping(); err != nil {
+			return nil, err
+		}
+
 		// 钩子回调
 		if opt.onConnected != nil {
 			opt.onConnected(cn)
@@ -119,7 +123,7 @@ func NewClient(ops ...Options) *Client {
 			gog.TraceF("Connection [{}] closed with error [{}].", conn.number, conn.lastErr)
 		}
 	}))
-	
+
 	c.pool = gollop.New(opt.poolOptions...)
 	return c
 }

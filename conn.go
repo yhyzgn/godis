@@ -21,6 +21,7 @@
 package godis
 
 import (
+	"errors"
 	"github.com/yhyzgn/gollop"
 	"net"
 	"sync"
@@ -28,7 +29,7 @@ import (
 )
 
 type Conn struct {
-	sync.Mutex
+	mu           sync.Mutex
 	number       string
 	conn         net.Conn
 	inUse        bool
@@ -46,11 +47,11 @@ func (cn *Conn) Do(cmd string, args ...interface{}) (interface{}, error) {
 	return cn.DoWithTimeout(cn.readTimeout, cmd, args...)
 }
 
-func (cn *Conn) DoWithTimeout(timeout time.Duration, cmd string, args ...interface{}) (interface{}, error) {
-	cn.Lock()
+func (cn *Conn) DoWithTimeout(timeout time.Duration, cmd string, args ...interface{}) (reply interface{}, err error) {
+	cn.mu.Lock()
 	pending := cn.pending
 	cn.pending = 0
-	cn.Unlock()
+	cn.mu.Unlock()
 
 	// 要么执行单条命令，要么执行批量任务，否则取消任务
 	if cmd == "" && pending == 0 {
@@ -92,50 +93,109 @@ func (cn *Conn) DoWithTimeout(timeout time.Duration, cmd string, args ...interfa
 	return cn.rd.readReply()
 }
 
-func (cn *Conn) mountToPool(pool *gollop.Pool) {
-	cn.mounted = pool
+func (cn *Conn) Send(cmd string, args ...interface{}) error {
+	cn.mu.Lock()
+	cn.pending++
+	cn.mu.Unlock()
+	if cn.writeTimeout > 0 {
+		_ = cn.conn.SetWriteDeadline(time.Now().Add(cn.writeTimeout))
+	}
+	if err := cn.wr.write(cmd, args...); err != nil {
+		return cn.fatal(err)
+	}
+	return nil
+}
+
+func (cn *Conn) Flush() error {
+	if cn.writeTimeout > 0 {
+		_ = cn.conn.SetWriteDeadline(time.Now().Add(cn.writeTimeout))
+	}
+	if err := cn.wr.flush(); err != nil {
+		return cn.fatal(err)
+	}
+	return nil
+}
+
+func (cn *Conn) Receive() (interface{}, error) {
+	return cn.ReceiveWithTimeout(cn.readTimeout)
+}
+
+func (cn *Conn) ReceiveWithTimeout(timeout time.Duration) (reply interface{}, err error) {
+	if timeout > 0 {
+		_ = cn.conn.SetReadDeadline(time.Now().Add(timeout))
+	}
+
+	if reply, err = cn.rd.readReply(); err != nil {
+		return nil, cn.fatal(err)
+	}
+
+	cn.mu.Lock()
+	if cn.pending > 0 {
+		cn.pending--
+	}
+	cn.mu.Unlock()
+
+	if err, ok := reply.(error); ok {
+		return nil, err
+	}
+	return
+}
+
+func (cn *Conn) Ping() error {
+	reply, err := String(cn.Do("PING"))
+	if err != nil {
+		return err
+	}
+	if reply != "PONG" {
+		return cn.fatal(errors.New("unexpected ping response"))
+	}
+	return nil
 }
 
 func (cn *Conn) Release() {
 	cn.mounted.Put(cn)
 }
 
+func (cn *Conn) mountToPool(pool *gollop.Pool) {
+	cn.mounted = pool
+}
+
 func (cn *Conn) fatal(err error) error {
-	cn.Lock()
+	cn.mu.Lock()
 	if cn.lastErr == nil {
 		cn.lastErr = err
 		_ = cn.Close()
 	}
-	cn.Unlock()
+	cn.mu.Unlock()
 	return err
 }
 
 func (cn *Conn) InUse(inUse bool) {
-	cn.Lock()
+	cn.mu.Lock()
 	cn.inUse = inUse
-	cn.Unlock()
+	cn.mu.Unlock()
 }
 
 func (cn *Conn) IsInUse() bool {
-	cn.Lock()
-	defer cn.Unlock()
+	cn.mu.Lock()
+	defer cn.mu.Unlock()
 	return cn.inUse
 }
 
 func (cn *Conn) CreatedAt() time.Time {
-	cn.Lock()
-	defer cn.Unlock()
+	cn.mu.Lock()
+	defer cn.mu.Unlock()
 	return cn.createdAt
 }
 
 func (cn *Conn) Err() error {
-	cn.Lock()
-	defer cn.Unlock()
+	cn.mu.Lock()
+	defer cn.mu.Unlock()
 	return cn.lastErr
 }
 
 func (cn *Conn) Close() error {
-	cn.Lock()
-	defer cn.Unlock()
+	cn.mu.Lock()
+	defer cn.mu.Unlock()
 	return cn.conn.Close()
 }

@@ -30,3 +30,7 @@ var Nil = errors.New("godis: server responded nil")
 func protocolError(e string) error {
 	return fmt.Errorf("godis: %s (possible server error or unsupported concurrent read by application)", e)
 }
+
+func replyTypeError(expected string, tp interface{}) error {
+	return fmt.Errorf("godis: unexpected type for %s, but got type %T", expected, tp)
+}

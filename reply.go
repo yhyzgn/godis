@@ -14,23 +14,23 @@
 
 // author : 颜洪毅
 // e-mail : yhyzgn@gmail.com
-// time   : 2020-04-04 10:11 下午
+// time   : 2020-04-05 10:34 下午
 // version: 1.0.0
 // desc   : 
 
 package godis
 
-import "time"
-
-type Doer interface {
-	Do(cmd string, args ...interface{}) (reply interface{}, err error)
-	DoWithTimeout(timeout time.Duration, cmd string, args ...interface{}) (reply interface{}, err error)
-	Send(cmd string, args ...interface{}) error
-	Flush() error
-	Receive() (reply interface{}, err error)
-	ReceiveWithTimeout(timeout time.Duration) (reply interface{}, err error)
-}
-
-type Argument interface {
-	Value() interface{}
+func String(reply interface{}, err error) (string, error) {
+	if err != nil {
+		return "", err
+	}
+	switch reply := reply.(type) {
+	case string:
+		return reply, nil
+	case []byte:
+		return BytesToString(reply), err
+	case nil:
+		return "", Nil
+	}
+	return "", replyTypeError("string", reply)
 }

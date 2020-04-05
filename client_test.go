@@ -38,10 +38,6 @@ func TestNewClient(t *testing.T) {
 	cn := client.Get()
 
 	// +
-	//res, err := cn.Do("AUTH", "redis")
-	//gog.Info(res, " :: ", err)
-
-	// +
 	res, err := cn.Do("SET", "test", "hello godis!")
 	gog.Info(res, " :: ", err)
 
@@ -64,7 +60,9 @@ func TestNewClient(t *testing.T) {
 	//res, err = cn.Do("subscribe", "channel-2")
 	//gog.Info(res, " :: ",  err)
 
-	//client.Release(cn)
-	cn.Release()
+	//fmt.Println(cn.Ping())
+
+	client.Release(cn)
+	//cn.Release()
 	time.Sleep(1000 * time.Second)
 }
